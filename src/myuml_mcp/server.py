@@ -80,7 +80,9 @@ def _token_from_uri(uri: str) -> str:
 def get_current_classes() -> ClassesResult:
     """Return the authenticated student's enrolled classes for the current academic term, including meeting times, locations, instructors, and credit total. Use for “what classes do I have?”, schedule checks, and current-term planning. Does not return prior terms, grades, or withdrawn classes."""
     records = _client().enrollment()
-    return normalize(records, active_term(records))
+    result = normalize(records, active_term(records))
+    assert isinstance(result, ClassesResult)
+    return result.model_dump(exclude_none=True)
 
 
 @mcp.tool()
@@ -88,17 +90,18 @@ def get_term_classes(term_id: str, include_withdrawn: bool = False) -> ClassesRe
     """Return normalized classes for one MyUML term ID. Use get_current_classes first to discover the current term ID."""
     result = normalize(_client().enrollment(), term_id, include_withdrawn)
     assert isinstance(result, ClassesResult)
-    return result
+    return result.model_dump(exclude_none=True)
 
 
 @mcp.tool()
-def get_enrollment_history(term_start: str | None = None, term_end: str | None = None, include_withdrawn: bool = False) -> EnrollmentHistory:
-    """Return compact enrollment history, optionally bounded by inclusive MyUML term IDs."""
+def get_enrollment_history(term_start: str | None = None, term_end: str | None = None, include_withdrawn: bool = False, include_meetings: bool = False) -> EnrollmentHistory:
+    """Return compact enrollment history, optionally bounded by inclusive MyUML term IDs. Meetings are omitted unless requested."""
     records = _client().enrollment()
     term_ids = sorted({record.term.id for record in records})
     term_ids = [term_id for term_id in term_ids if (term_start is None or term_id >= term_start) and (term_end is None or term_id <= term_end)]
-    terms = [normalize(records, term_id, include_withdrawn, include_retrieved_at=False) for term_id in term_ids]
-    return EnrollmentHistory(retrieved_at=datetime.now(ZoneInfo("America/New_York")), term_count=len(terms), terms=[term for term in terms if isinstance(term, TermClasses)])
+    terms = [normalize(records, term_id, include_withdrawn, include_meetings=include_meetings, include_retrieved_at=False) for term_id in term_ids]
+    result = EnrollmentHistory(retrieved_at=datetime.now(ZoneInfo("America/New_York")), term_count=len(terms), terms=[term for term in terms if isinstance(term, TermClasses)])
+    return result.model_dump(exclude_none=True)
 
 
 @mcp.tool()
