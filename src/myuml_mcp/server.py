@@ -9,15 +9,17 @@ import sys
 import webbrowser
 from base64 import urlsafe_b64decode
 from binascii import Error as Base64Error
-from gzip import decompress
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
 from urllib.parse import urlencode, urlparse
-from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from mcp.server.mcpserver import MCPServer
+
+from .api import MyUMLClient
+from .schedule import ClassesResult, active_term, normalize
 
 API_BASE = "https://www.uml.edu/api/myuml/v1.0"
 ALERTS_BASE = "https://umasslowell.azure-api.net/alerts"
@@ -40,6 +42,13 @@ def _load_token() -> str | None:
     return os.environ.get("MYUML_TOKEN") or (_token_path().read_text().strip() if _token_path().is_file() else None)
 
 
+def _client() -> MyUMLClient:
+    token = _load_token()
+    if not token:
+        raise RuntimeError("MyUML is not configured. Run 'myuml-mcp login' or set MYUML_TOKEN.")
+    return MyUMLClient(token)
+
+
 def _login_state_path() -> Path:
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "myuml-mcp" / "login.json"
 
@@ -49,107 +58,90 @@ def _token_from_uri(uri: str) -> str:
     decoded = urlsafe_b64decode(fragment + "=" * (-len(fragment) % 4))
     token = json.loads(decoded)["accessTokens"]["uml.mobile.myuml"]
     if not isinstance(token, str):
-        raise ValueError("token is not a string")
+        raise TypeError("token is not a string")
     return token
 
 
-def _request(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, auth: bool = True) -> Any:
-    """Make a request only to one of the API hosts captured from the native app."""
-    base = API_BASE if auth else ALERTS_BASE
-    headers = {"Accept": "application/json", "User-Agent": "myuml-mcp/0.1.0"}
-    if auth:
-        token = _load_token()
-        if not token:
-            raise RuntimeError("MyUML is not configured. Run 'myuml-mcp login' or set MYUML_TOKEN.")
-        headers["Authorization"] = f"Bearer {token}"
+@mcp.tool()
+def get_current_classes() -> ClassesResult:
+    """Return the authenticated student's enrolled classes for the current academic term, including meeting times, locations, instructors, and credit total. Use for “what classes do I have?”, schedule checks, and current-term planning. Does not return prior terms, grades, or withdrawn classes."""
+    records = _client().enrollment()
+    return normalize(records, active_term(records))
 
-    body = None
-    if payload is not None:
-        body = json.dumps(payload).encode()
-        headers["Content-Type"] = "application/json"
 
-    try:
-        with urlopen(Request(f"{base}{path}", data=body, headers=headers, method=method), timeout=30) as response:
-            if response.status == 204:
-                return {"ok": True}
-            content = response.read()
-            if response.headers.get("Content-Encoding") == "gzip":
-                content = decompress(content)
-            return json.loads(content)
-    except HTTPError as error:
-        detail = error.read().decode(errors="replace")
-        if error.code in (401, 403):
-            raise RuntimeError("MyUML authentication failed. Run 'myuml-mcp login' or set a current MYUML_TOKEN.") from error
-        raise RuntimeError(f"MyUML API request failed ({error.code}): {detail}") from error
-    except URLError as error:
-        raise RuntimeError(f"Could not reach the MyUML API: {error.reason}") from error
+@mcp.tool()
+def get_term_classes(term_id: str, include_withdrawn: bool = False) -> ClassesResult:
+    """Return normalized classes for one MyUML term ID. Use get_current_classes first to discover the current term ID."""
+    return normalize(_client().enrollment(), term_id, include_withdrawn)
+
+
+@mcp.tool()
+def get_enrollment_history(term_start: str | None = None, term_end: str | None = None, include_withdrawn: bool = False) -> list[ClassesResult]:
+    """Return compact enrollment history, optionally bounded by inclusive MyUML term IDs."""
+    records = _client().enrollment()
+    term_ids = sorted({record.term.id for record in records})
+    term_ids = [term_id for term_id in term_ids if (term_start is None or term_id >= term_start) and (term_end is None or term_id <= term_end)]
+    return [normalize(records, term_id, include_withdrawn) for term_id in term_ids]
 
 
 @mcp.tool()
 def get_profile() -> dict[str, Any]:
     """Get the signed-in student's MyUML profile, available shortcuts, and shortcut pin state."""
-    return _request("/me")
+    return _client().profile()
 
 
 @mcp.tool()
 def get_enrollment() -> list[dict[str, Any]]:
     """Get enrolled and recent classes, including meetings, instructors, grades, and Canvas links."""
-    return _request("/me/academics/enrollment")
+    return [record.model_dump() for record in _client().enrollment()]
 
 
 @mcp.tool()
 def get_service_indicators() -> list[dict[str, Any]]:
     """Get academic service indicators (holds) on the student's record."""
-    return _request("/me/academics/service_indicators")
+    return _client().service_indicators()
 
 
 @mcp.tool()
 def get_todo_items() -> list[dict[str, Any]]:
     """Get academic to-do items assigned to the student."""
-    return _request("/me/academics/todo_items")
+    return _client().todo_items()
 
 
 @mcp.tool()
 def get_advisors() -> list[dict[str, Any]]:
     """Get the student's academic advisors and contact details."""
-    return _request("/me/academics/advisors")
+    return _client().advisors()
 
 
 @mcp.tool()
 def get_advising_appointments() -> list[dict[str, Any]]:
     """Get the student's advising appointments."""
-    return _request("/me/calendar/advising_appointments")
+    return _client().advising_appointments()
 
 
 @mcp.tool()
 def get_special_periods() -> list[dict[str, Any]]:
     """Get MyUML calendar special periods, such as add/drop or registration periods."""
-    return _request("/calendar/special_periods")
+    return _client().special_periods()
 
 
 @mcp.tool()
 def get_important_dates() -> list[dict[str, Any]]:
     """Get university important dates, deadlines, and closures."""
-    return _request("/calendar/important_dates")
+    return _client().important_dates()
 
 
 @mcp.tool()
 def get_campus_alerts() -> dict[str, Any]:
-    """Get active UMass Lowell and UMass system IT alerts. This endpoint is public."""
-    return {
-        "umass_lowell": _request("/lowell/web/text", auth=False),
-        "umass_system_it": _request("/umassp/uits", auth=False),
-    }
+    """Get active UMass Lowell and UMass system IT alerts."""
+    return _client().campus_alerts()
 
 
 @mcp.tool()
 def sync_pinned_shortcuts(pinned_shortcut_ids: list[str]) -> dict[str, Any]:
     """Replace the MyUML dashboard's pinned shortcuts with the supplied shortcut IDs. Use get_profile first to discover IDs."""
-    return _request(
-        "/me/shortcuts/sync",
-        method="POST",
-        payload={"PinnedShortcuts": pinned_shortcut_ids, "ClientLastModifiedTimestamp": None},
-    )
+    return _client().sync_pinned_shortcuts(pinned_shortcut_ids)
 
 
 def login() -> None:
@@ -158,10 +150,10 @@ def login() -> None:
     nonce = secrets.token_urlsafe(24)
 
     class CallbackHandler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             self.send_error(404)
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             if self.path != f"/{nonce}":
                 self.send_error(404)
                 return
@@ -217,7 +209,7 @@ def _install_protocol_handler() -> Any:
         applications = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "applications"
         desktop = applications / "myuml-mcp-login.desktop"
         applications.mkdir(parents=True, exist_ok=True)
-        previous = subprocess.run(["xdg-mime", "query", "default", f"x-scheme-handler/{APP_SCHEME}"], capture_output=True, text=True).stdout.strip()
+        previous = subprocess.run(["xdg-mime", "query", "default", f"x-scheme-handler/{APP_SCHEME}"], capture_output=True, check=False, text=True).stdout.strip()
         desktop.write_text(f"[Desktop Entry]\nType=Application\nName=MyUML Login\nNoDisplay=true\nExec={command}\nMimeType=x-scheme-handler/{APP_SCHEME};\n")
         subprocess.run(["xdg-mime", "default", desktop.name, f"x-scheme-handler/{APP_SCHEME}"], check=True)
         def cleanup() -> None:
