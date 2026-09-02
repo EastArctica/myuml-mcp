@@ -77,6 +77,22 @@ class CampusAlerts(BaseModel):
     umass_system_it: dict[str, Any]
 
 
+class ServiceIndicator(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class TodoItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class AdvisingAppointment(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class ShortcutSyncResult(BaseModel):
+    ok: bool
+
+
 class RawEnrollment(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     course: str = Field(alias="CourseNumber")
@@ -122,17 +138,17 @@ class MyUMLClient:
     def profile(self) -> Profile:
         return Profile.model_validate(self._request("/me"))
 
-    def service_indicators(self) -> list[dict[str, Any]]:
-        return self._request("/me/academics/service_indicators")
+    def service_indicators(self) -> list[ServiceIndicator]:
+        return [ServiceIndicator.model_validate(value) for value in self._request("/me/academics/service_indicators")]
 
-    def todo_items(self) -> list[dict[str, Any]]:
-        return self._request("/me/academics/todo_items")
+    def todo_items(self) -> list[TodoItem]:
+        return [TodoItem.model_validate(value) for value in self._request("/me/academics/todo_items")]
 
     def advisors(self) -> list[Advisor]:
         return [Advisor.model_validate(value) for value in self._request("/me/academics/advisors")]
 
-    def advising_appointments(self) -> list[dict[str, Any]]:
-        return self._request("/me/calendar/advising_appointments")
+    def advising_appointments(self) -> list[AdvisingAppointment]:
+        return [AdvisingAppointment.model_validate(value) for value in self._request("/me/calendar/advising_appointments")]
 
     def special_periods(self) -> list[SpecialPeriod]:
         return [SpecialPeriod.model_validate(value) for value in self._request("/calendar/special_periods")]
@@ -143,5 +159,6 @@ class MyUMLClient:
     def campus_alerts(self) -> CampusAlerts:
         return CampusAlerts(umass_lowell=self._request("/lowell/web/text", auth=False), umass_system_it=self._request("/umassp/uits", auth=False))
 
-    def sync_pinned_shortcuts(self, shortcut_ids: list[str]) -> dict[str, Any]:
-        return self._request("/me/shortcuts/sync", method="POST", payload={"PinnedShortcuts": shortcut_ids, "ClientLastModifiedTimestamp": None})
+    def replace_pinned_shortcuts(self, shortcut_ids: list[str]) -> ShortcutSyncResult:
+        self._request("/me/shortcuts/sync", method="POST", payload={"PinnedShortcuts": shortcut_ids, "ClientLastModifiedTimestamp": None})
+        return ShortcutSyncResult(ok=True)

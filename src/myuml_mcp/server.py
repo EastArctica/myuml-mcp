@@ -20,7 +20,19 @@ from zoneinfo import ZoneInfo
 
 from mcp.server.mcpserver import MCPServer
 
-from .api import MyUMLClient
+from .api import (
+    AdvisingAppointment,
+    Advisor,
+    CampusAlerts,
+    ImportantDate,
+    MyUMLClient,
+    Profile,
+    RawEnrollment,
+    ServiceIndicator,
+    ShortcutSyncResult,
+    SpecialPeriod,
+    TodoItem,
+)
 from .schedule import ClassesResult, EnrollmentHistory, TermClasses, active_term, normalize
 
 API_BASE = "https://www.uml.edu/api/myuml/v1.0"
@@ -90,63 +102,63 @@ def get_enrollment_history(term_start: str | None = None, term_end: str | None =
 
 
 @mcp.tool()
-def get_profile() -> dict[str, Any]:
+def get_profile() -> Profile:
     """Get the signed-in student's MyUML profile, available shortcuts, and shortcut pin state."""
     return _client().profile()
 
 
 @mcp.tool()
-def get_enrollment() -> list[dict[str, Any]]:
-    """Get enrolled and recent classes, including meetings, instructors, grades, and Canvas links."""
-    return [record.model_dump() for record in _client().enrollment()]
+def get_full_enrollment() -> list[RawEnrollment]:
+    """Get all enrollment records across all terms."""
+    return _client().enrollment()
 
 
 @mcp.tool()
-def get_service_indicators() -> list[dict[str, Any]]:
-    """Get academic service indicators (holds) on the student's record."""
+def get_holds() -> list[ServiceIndicator]:
+    """Get academic holds on the student's record."""
     return _client().service_indicators()
 
 
 @mcp.tool()
-def get_todo_items() -> list[dict[str, Any]]:
+def get_todo_items() -> list[TodoItem]:
     """Get academic to-do items assigned to the student."""
     return _client().todo_items()
 
 
 @mcp.tool()
-def get_advisors() -> list[dict[str, Any]]:
+def get_advisors() -> list[Advisor]:
     """Get the student's academic advisors and contact details."""
     return _client().advisors()
 
 
 @mcp.tool()
-def get_advising_appointments() -> list[dict[str, Any]]:
+def get_advising_appointments() -> list[AdvisingAppointment]:
     """Get the student's advising appointments."""
     return _client().advising_appointments()
 
 
 @mcp.tool()
-def get_special_periods() -> list[dict[str, Any]]:
+def get_special_periods() -> list[SpecialPeriod]:
     """Get MyUML calendar special periods, such as add/drop or registration periods."""
     return _client().special_periods()
 
 
 @mcp.tool()
-def get_important_dates() -> list[dict[str, Any]]:
+def get_important_dates() -> list[ImportantDate]:
     """Get university important dates, deadlines, and closures."""
     return _client().important_dates()
 
 
 @mcp.tool()
-def get_campus_alerts() -> dict[str, Any]:
+def get_campus_alerts() -> CampusAlerts:
     """Get active UMass Lowell and UMass system IT alerts."""
     return _client().campus_alerts()
 
 
 @mcp.tool()
-def replace_pinned_shortcuts(pinned_shortcut_ids: list[str]) -> dict[str, Any]:
+def replace_pinned_shortcuts(pinned_shortcut_ids: list[str]) -> ShortcutSyncResult:
     """Replace the MyUML dashboard's pinned shortcuts with the supplied shortcut IDs. Use get_profile first to discover IDs."""
-    return _client().sync_pinned_shortcuts(pinned_shortcut_ids)
+    return _client().replace_pinned_shortcuts(pinned_shortcut_ids)
 
 
 def login() -> None:
