@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .api import RawEnrollment
 
@@ -29,11 +29,12 @@ class Class(BaseModel):
     class_number: int
     course: str
     title: str
-    topic: str | None = None
+    topic: str | None = Field(default=None, exclude_if=lambda value: value is None)
     section: str
     credits: float
     status: str
-    meetings: list[Meeting]
+    meetings: list[Meeting] | None = Field(default=None, exclude_if=lambda value: value is None)
+
 class TermClasses(BaseModel):
     term: Term
     course_count: int
@@ -63,7 +64,7 @@ def active_term(records: list[RawEnrollment]) -> str:
     return max((record.term.id for record in records if not record.withdrawn and record.status.lower() == "enrolled"), default="")
 
 
-def normalize(records: list[RawEnrollment], term_id: str, include_withdrawn: bool = False, *, include_retrieved_at: bool = True) -> ClassesResult | TermClasses:
+def normalize(records: list[RawEnrollment], term_id: str, include_withdrawn: bool = False, *, include_meetings: bool = True, include_retrieved_at: bool = True) -> ClassesResult | TermClasses:
     selected = [record for record in records if record.term.id == term_id and (include_withdrawn or not record.withdrawn)]
     if not selected:
         raise RuntimeError(f"No enrollment records found for term '{term_id}'.")
@@ -71,7 +72,7 @@ def normalize(records: list[RawEnrollment], term_id: str, include_withdrawn: boo
         Class(
             class_number=record.class_number, course=record.course, title=record.title, topic=record.topic, section=record.section,
             credits=record.credits, status=record.status.lower(),
-            meetings=[Meeting(days=[DAY_CODES.get(day, day) for day in meeting.days], start=meeting.start[:5], end=meeting.end[:5], location=meeting.location, instructors=[person.get("DisplayName") for person in meeting.instructors if person.get("DisplayName")]) for meeting in record.meetings if meeting.start and meeting.end],
+            meetings=[Meeting(days=[DAY_CODES.get(day, day) for day in meeting.days], start=meeting.start[:5], end=meeting.end[:5], location=meeting.location, instructors=[person.get("DisplayName") for person in meeting.instructors if person.get("DisplayName")]) for meeting in record.meetings if meeting.start and meeting.end] if include_meetings else None,
         ) for record in selected
     ]
     values = {"term": Term(id=selected[0].term.id, name=selected[0].term.name), "course_count": len(classes), "total_credits": sum(course.credits for course in classes), "classes": classes}
