@@ -81,6 +81,7 @@ class RawEnrollment(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     course: str = Field(alias="CourseNumber")
     title: str = Field(alias="Title")
+    topic: str | None = Field(alias="Topic", default=None)
     term: RawTerm = Field(alias="Term")
     section: str = Field(alias="Section")
     class_number: int = Field(alias="ClassNumber")

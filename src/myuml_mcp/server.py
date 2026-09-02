@@ -9,17 +9,19 @@ import sys
 import webbrowser
 from base64 import urlsafe_b64decode
 from binascii import Error as Base64Error
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from mcp.server.mcpserver import MCPServer
 
 from .api import MyUMLClient
-from .schedule import ClassesResult, active_term, normalize
+from .schedule import ClassesResult, EnrollmentHistory, TermClasses, active_term, normalize
 
 API_BASE = "https://www.uml.edu/api/myuml/v1.0"
 ALERTS_BASE = "https://umasslowell.azure-api.net/alerts"
@@ -72,16 +74,19 @@ def get_current_classes() -> ClassesResult:
 @mcp.tool()
 def get_term_classes(term_id: str, include_withdrawn: bool = False) -> ClassesResult:
     """Return normalized classes for one MyUML term ID. Use get_current_classes first to discover the current term ID."""
-    return normalize(_client().enrollment(), term_id, include_withdrawn)
+    result = normalize(_client().enrollment(), term_id, include_withdrawn)
+    assert isinstance(result, ClassesResult)
+    return result
 
 
 @mcp.tool()
-def get_enrollment_history(term_start: str | None = None, term_end: str | None = None, include_withdrawn: bool = False) -> list[ClassesResult]:
+def get_enrollment_history(term_start: str | None = None, term_end: str | None = None, include_withdrawn: bool = False) -> EnrollmentHistory:
     """Return compact enrollment history, optionally bounded by inclusive MyUML term IDs."""
     records = _client().enrollment()
     term_ids = sorted({record.term.id for record in records})
     term_ids = [term_id for term_id in term_ids if (term_start is None or term_id >= term_start) and (term_end is None or term_id <= term_end)]
-    return [normalize(records, term_id, include_withdrawn) for term_id in term_ids]
+    terms = [normalize(records, term_id, include_withdrawn, include_retrieved_at=False) for term_id in term_ids]
+    return EnrollmentHistory(retrieved_at=datetime.now(ZoneInfo("America/New_York")), term_count=len(terms), terms=[term for term in terms if isinstance(term, TermClasses)])
 
 
 @mcp.tool()
@@ -139,7 +144,7 @@ def get_campus_alerts() -> dict[str, Any]:
 
 
 @mcp.tool()
-def sync_pinned_shortcuts(pinned_shortcut_ids: list[str]) -> dict[str, Any]:
+def replace_pinned_shortcuts(pinned_shortcut_ids: list[str]) -> dict[str, Any]:
     """Replace the MyUML dashboard's pinned shortcuts with the supplied shortcut IDs. Use get_profile first to discover IDs."""
     return _client().sync_pinned_shortcuts(pinned_shortcut_ids)
 

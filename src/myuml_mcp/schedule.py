@@ -29,19 +29,26 @@ class Class(BaseModel):
     class_number: int
     course: str
     title: str
+    topic: str | None = None
     section: str
     credits: float
     status: str
     meetings: list[Meeting]
-    canvas_url: str | None = None
-
-
-class ClassesResult(BaseModel):
+class TermClasses(BaseModel):
     term: Term
-    retrieved_at: datetime
     course_count: int
     total_credits: float
     classes: list[Class]
+
+
+class ClassesResult(TermClasses):
+    retrieved_at: datetime
+
+
+class EnrollmentHistory(BaseModel):
+    retrieved_at: datetime
+    term_count: int
+    terms: list[TermClasses]
 
 
 def active_term(records: list[RawEnrollment]) -> str:
@@ -56,16 +63,16 @@ def active_term(records: list[RawEnrollment]) -> str:
     return max((record.term.id for record in records if not record.withdrawn and record.status.lower() == "enrolled"), default="")
 
 
-def normalize(records: list[RawEnrollment], term_id: str, include_withdrawn: bool = False) -> ClassesResult:
+def normalize(records: list[RawEnrollment], term_id: str, include_withdrawn: bool = False, *, include_retrieved_at: bool = True) -> ClassesResult | TermClasses:
     selected = [record for record in records if record.term.id == term_id and (include_withdrawn or not record.withdrawn)]
     if not selected:
         raise RuntimeError(f"No enrollment records found for term '{term_id}'.")
     classes = [
         Class(
-            class_number=record.class_number, course=record.course, title=record.title, section=record.section,
+            class_number=record.class_number, course=record.course, title=record.title, topic=record.topic, section=record.section,
             credits=record.credits, status=record.status.lower(),
             meetings=[Meeting(days=[DAY_CODES.get(day, day) for day in meeting.days], start=meeting.start[:5], end=meeting.end[:5], location=meeting.location, instructors=[person.get("DisplayName") for person in meeting.instructors if person.get("DisplayName")]) for meeting in record.meetings if meeting.start and meeting.end],
-            canvas_url=record.lms.get("Link") if record.lms else None,
         ) for record in selected
     ]
-    return ClassesResult(term=Term(id=selected[0].term.id, name=selected[0].term.name), retrieved_at=datetime.now(TIMEZONE), course_count=len(classes), total_credits=sum(course.credits for course in classes), classes=classes)
+    values = {"term": Term(id=selected[0].term.id, name=selected[0].term.name), "course_count": len(classes), "total_credits": sum(course.credits for course in classes), "classes": classes}
+    return ClassesResult(retrieved_at=datetime.now(TIMEZONE), **values) if include_retrieved_at else TermClasses(**values)
