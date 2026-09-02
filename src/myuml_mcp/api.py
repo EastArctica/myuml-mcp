@@ -29,6 +29,54 @@ class RawMeeting(BaseModel):
     instructors: list[dict[str, Any]] = Field(alias="Instructors", default_factory=list)
 
 
+class Profile(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id_number: str = Field(alias="IdNumber")
+    first_name: str = Field(alias="FirstName")
+    last_name: str = Field(alias="LastName")
+    image: str | None = Field(alias="Image")
+    is_valid: bool = Field(alias="IsValid")
+    features: list[str] = Field(alias="Features")
+
+
+class Advisor(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: str = Field(alias="Id")
+    person_id: str = Field(alias="PersonId")
+    first_name: str = Field(alias="FirstName")
+    last_name: str = Field(alias="LastName")
+    display_name: str = Field(alias="DisplayName")
+    email_address: str = Field(alias="EmailAddress")
+    role: str = Field(alias="Role")
+    academic_career: str = Field(alias="AcademicCareer")
+    academic_program: str = Field(alias="AcademicProgram")
+    academic_plan: str = Field(alias="AcademicPlan")
+
+
+class SpecialPeriod(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: str = Field(alias="Id")
+    title: str = Field(alias="Title")
+    description: str | None = Field(alias="Description")
+    start: str = Field(alias="Start")
+    end: str = Field(alias="End")
+    is_all_day: bool = Field(alias="IsAllDay")
+    is_blackout: bool = Field(alias="IsBlackout")
+    day_override: str | None = Field(alias="DayOverride")
+
+
+class ImportantDate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: str = Field(alias="Id")
+    description: str = Field(alias="Description")
+    date: str = Field(alias="Date")
+
+
+class CampusAlerts(BaseModel):
+    umass_lowell: dict[str, Any]
+    umass_system_it: dict[str, Any]
+
+
 class RawEnrollment(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     course: str = Field(alias="CourseNumber")
@@ -70,8 +118,8 @@ class MyUMLClient:
     def enrollment(self) -> list[RawEnrollment]:
         return [RawEnrollment.model_validate(value) for value in self._request("/me/academics/enrollment")]
 
-    def profile(self) -> dict[str, Any]:
-        return self._request("/me")
+    def profile(self) -> Profile:
+        return Profile.model_validate(self._request("/me"))
 
     def service_indicators(self) -> list[dict[str, Any]]:
         return self._request("/me/academics/service_indicators")
@@ -79,20 +127,20 @@ class MyUMLClient:
     def todo_items(self) -> list[dict[str, Any]]:
         return self._request("/me/academics/todo_items")
 
-    def advisors(self) -> list[dict[str, Any]]:
-        return self._request("/me/academics/advisors")
+    def advisors(self) -> list[Advisor]:
+        return [Advisor.model_validate(value) for value in self._request("/me/academics/advisors")]
 
     def advising_appointments(self) -> list[dict[str, Any]]:
         return self._request("/me/calendar/advising_appointments")
 
-    def special_periods(self) -> list[dict[str, Any]]:
-        return self._request("/calendar/special_periods")
+    def special_periods(self) -> list[SpecialPeriod]:
+        return [SpecialPeriod.model_validate(value) for value in self._request("/calendar/special_periods")]
 
-    def important_dates(self) -> list[dict[str, Any]]:
-        return self._request("/calendar/important_dates")
+    def important_dates(self) -> list[ImportantDate]:
+        return [ImportantDate.model_validate(value) for value in self._request("/calendar/important_dates")]
 
-    def campus_alerts(self) -> dict[str, Any]:
-        return {"umass_lowell": self._request("/lowell/web/text", auth=False), "umass_system_it": self._request("/umassp/uits", auth=False)}
+    def campus_alerts(self) -> CampusAlerts:
+        return CampusAlerts(umass_lowell=self._request("/lowell/web/text", auth=False), umass_system_it=self._request("/umassp/uits", auth=False))
 
     def sync_pinned_shortcuts(self, shortcut_ids: list[str]) -> dict[str, Any]:
         return self._request("/me/shortcuts/sync", method="POST", payload={"PinnedShortcuts": shortcut_ids, "ClientLastModifiedTimestamp": None})
