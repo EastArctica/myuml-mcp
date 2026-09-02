@@ -19,19 +19,21 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 
 from .api import (
     AdvisingAppointment,
     Advisor,
     CampusAlerts,
+    EnrollmentRecord,
     ImportantDate,
     MyUMLClient,
     Profile,
-    RawEnrollment,
     ServiceIndicator,
     ShortcutSyncResult,
     SpecialPeriod,
     TodoItem,
+    agent_data,
 )
 from .schedule import ClassesResult, EnrollmentHistory, TermClasses, active_term, normalize
 
@@ -82,86 +84,110 @@ def get_current_classes() -> ClassesResult:
     records = _client().enrollment()
     result = normalize(records, active_term(records))
     assert isinstance(result, ClassesResult)
-    return result.model_dump(exclude_none=True)
+    return agent_data(result)
 
 
 @mcp.tool()
-def get_term_classes(term_id: str, include_withdrawn: bool = False) -> ClassesResult:
-    """Return normalized classes for one MyUML term ID. Use get_current_classes first to discover the current term ID."""
-    result = normalize(_client().enrollment(), term_id, include_withdrawn)
+def get_term_classes(term_id: str, include_withdrawn: bool = False, include_meetings: bool = True) -> ClassesResult:
+    """Return normalized classes for one MyUML term ID. Meetings are included by default; set include_meetings to false for a compact result."""
+    result = normalize(_client().enrollment(), term_id, include_withdrawn, include_meetings=include_meetings)
     assert isinstance(result, ClassesResult)
-    return result.model_dump(exclude_none=True)
+    return agent_data(result)
 
 
 @mcp.tool()
-def get_enrollment_history(term_start: str | None = None, term_end: str | None = None, include_withdrawn: bool = False, include_meetings: bool = False) -> EnrollmentHistory:
+def get_enrollment_history(
+    term_start: str | None = None,
+    term_end: str | None = None,
+    include_withdrawn: bool = False,
+    include_meetings: bool = False,
+) -> EnrollmentHistory:
     """Return compact enrollment history, optionally bounded by inclusive MyUML term IDs. Meetings are omitted unless requested."""
     records = _client().enrollment()
     term_ids = sorted({record.term.id for record in records})
-    term_ids = [term_id for term_id in term_ids if (term_start is None or term_id >= term_start) and (term_end is None or term_id <= term_end)]
-    terms = [normalize(records, term_id, include_withdrawn, include_meetings=include_meetings, include_retrieved_at=False) for term_id in term_ids]
-    result = EnrollmentHistory(retrieved_at=datetime.now(ZoneInfo("America/New_York")), term_count=len(terms), terms=[term for term in terms if isinstance(term, TermClasses)])
-    return result.model_dump(exclude_none=True)
+    term_ids = [
+        term_id
+        for term_id in term_ids
+        if (term_start is None or term_id >= term_start) and (term_end is None or term_id <= term_end)
+    ]
+    terms = [
+        normalize(records, term_id, include_withdrawn, include_meetings=include_meetings, include_retrieved_at=False)
+        for term_id in term_ids
+    ]
+    result = EnrollmentHistory(
+        retrieved_at=datetime.now(ZoneInfo("America/New_York")),
+        term_count=len(terms),
+        terms=[term for term in terms if isinstance(term, TermClasses)],
+    )
+    return agent_data(result)
 
 
 @mcp.tool()
 def get_profile() -> Profile:
     """Get the signed-in student's MyUML profile, available shortcuts, and shortcut pin state."""
-    return _client().profile()
+    return agent_data(_client().profile())
 
 
 @mcp.tool()
-def get_full_enrollment() -> list[RawEnrollment]:
-    """Get all enrollment records across all terms."""
-    return _client().enrollment()
+def get_full_enrollment() -> list[EnrollmentRecord]:
+    """Get all enrollment records across all terms. This endpoint does not supply grades."""
+    return agent_data(_client().enrollment())
 
 
 @mcp.tool()
 def get_holds() -> list[ServiceIndicator]:
     """Get academic holds on the student's record."""
-    return _client().service_indicators()
+    return agent_data(_client().service_indicators())
 
 
 @mcp.tool()
 def get_todo_items() -> list[TodoItem]:
     """Get academic to-do items assigned to the student."""
-    return _client().todo_items()
+    return agent_data(_client().todo_items())
 
 
 @mcp.tool()
 def get_advisors() -> list[Advisor]:
     """Get the student's academic advisors and contact details."""
-    return _client().advisors()
+    return agent_data(_client().advisors())
 
 
 @mcp.tool()
 def get_advising_appointments() -> list[AdvisingAppointment]:
     """Get the student's advising appointments."""
-    return _client().advising_appointments()
+    return agent_data(_client().advising_appointments())
 
 
 @mcp.tool()
 def get_special_periods() -> list[SpecialPeriod]:
     """Get MyUML calendar special periods, such as add/drop or registration periods."""
-    return _client().special_periods()
+    return agent_data(_client().special_periods())
 
 
 @mcp.tool()
 def get_important_dates() -> list[ImportantDate]:
     """Get university important dates, deadlines, and closures."""
-    return _client().important_dates()
+    return agent_data(_client().important_dates())
 
 
 @mcp.tool()
 def get_campus_alerts() -> CampusAlerts:
     """Get active UMass Lowell and UMass system IT alerts."""
-    return _client().campus_alerts()
+    return agent_data(_client().campus_alerts())
 
 
-@mcp.tool()
-def replace_pinned_shortcuts(pinned_shortcut_ids: list[str]) -> ShortcutSyncResult:
-    """Replace the MyUML dashboard's pinned shortcuts with the supplied shortcut IDs. Use get_profile first to discover IDs."""
-    return _client().replace_pinned_shortcuts(pinned_shortcut_ids)
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
+)
+def replace_pinned_shortcuts(pinned_shortcut_ids: list[str], confirm: bool = False) -> ShortcutSyncResult:
+    """Replace all dashboard pins with these IDs. This is a destructive write; inspect get_profile first and set confirm=true only after review."""
+    if not confirm:
+        raise ValueError("Set confirm=true to replace all pinned shortcuts.")
+    if len(pinned_shortcut_ids) != len(set(pinned_shortcut_ids)) or any(
+        not shortcut_id.strip() for shortcut_id in pinned_shortcut_ids
+    ):
+        raise ValueError("Pinned shortcut IDs must be unique, non-empty strings.")
+    return agent_data(_client().replace_pinned_shortcuts(pinned_shortcut_ids))
 
 
 def login() -> None:
@@ -229,18 +255,28 @@ def _install_protocol_handler() -> Any:
         applications = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "applications"
         desktop = applications / "myuml-mcp-login.desktop"
         applications.mkdir(parents=True, exist_ok=True)
-        previous = subprocess.run(["xdg-mime", "query", "default", f"x-scheme-handler/{APP_SCHEME}"], capture_output=True, check=False, text=True).stdout.strip()
-        desktop.write_text(f"[Desktop Entry]\nType=Application\nName=MyUML Login\nNoDisplay=true\nExec={command}\nMimeType=x-scheme-handler/{APP_SCHEME};\n")
+        previous = subprocess.run(
+            ["xdg-mime", "query", "default", f"x-scheme-handler/{APP_SCHEME}"],
+            capture_output=True,
+            check=False,
+            text=True,
+        ).stdout.strip()
+        desktop.write_text(
+            f"[Desktop Entry]\nType=Application\nName=MyUML Login\nNoDisplay=true\nExec={command}\nMimeType=x-scheme-handler/{APP_SCHEME};\n"
+        )
         subprocess.run(["xdg-mime", "default", desktop.name, f"x-scheme-handler/{APP_SCHEME}"], check=True)
+
         def cleanup() -> None:
             if previous:
                 subprocess.run(["xdg-mime", "default", previous, f"x-scheme-handler/{APP_SCHEME}"], check=False)
             desktop.unlink(missing_ok=True)
+
         return cleanup
     if system == "Windows":
         print("Warning: temporary protocol handling is untested on Windows.", file=sys.stderr)
         import winreg
-        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Classes\{APP_SCHEME}\shell\open\command")
+
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{APP_SCHEME}\shell\open\command")
         winreg.SetValue(key, "", winreg.REG_SZ, command.replace("%u", "%1"))
         winreg.CloseKey(key)
         return lambda: None

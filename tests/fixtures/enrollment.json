@@ -1,0 +1,60 @@
+[
+  {
+    "CourseNumber": "COMP.1010",
+    "Title": "Started Class",
+    "Term": {"Id": "2251", "Description": "Spring 2025"},
+    "Section": "201",
+    "ClassNumber": 10001,
+    "Credits": 3,
+    "EnrollmentStatusName": "Enrolled",
+    "IsWithdrawn": false,
+    "Meetings": [
+      {
+        "FormattedDays": "MW",
+        "DailyStartTime": "2025-01-21T09:00:00",
+        "DailyEndTime": "2025-05-01T09:50:00",
+        "StartDate": "2025-01-21",
+        "EndDate": "2025-05-01",
+        "LocationDescription": "Olsen Hall",
+        "Instructors": [{"DisplayName": "Ada Lovelace"}]
+      }
+    ]
+  },
+  {
+    "CourseNumber": "COMP.2020",
+    "Title": "Future Registration",
+    "Topic": null,
+    "Term": {"Id": "2271", "Description": "Spring 2027"},
+    "Section": "001",
+    "ClassNumber": 20002,
+    "Credits": 3,
+    "EnrollmentStatusName": "Enrolled",
+    "IsWithdrawn": false,
+    "Meetings": [
+      {
+        "FormattedDays": "TR",
+        "DailyStartTime": "2027-01-20T10:00:00",
+        "DailyEndTime": "2027-05-01T11:15:00",
+        "StartDate": "2027-01-20",
+        "EndDate": "2027-05-01",
+        "Instructors": []
+      }
+    ]
+  },
+  {
+    "CourseNumber": "COMP.3030",
+    "Title": "Online Seminar",
+    "Term": {"Id": "2251", "Description": "Spring 2025"},
+    "Section": "801",
+    "ClassNumber": 30003,
+    "Credits": 1,
+    "EnrollmentStatusName": "Enrolled",
+    "IsWithdrawn": false,
+    "Meetings": [
+      {
+        "LocationDescription": "Online",
+        "Instructors": []
+      }
+    ]
+  }
+]
