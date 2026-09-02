@@ -1,9 +1,7 @@
 ## MyUML MCP
 
 An MCP server for the authenticated data APIs used by UMass Lowell's MyUML
-mobile app. The available tools were derived only from the native app API calls
-in `MyUML-app-captures.har`; browser, telemetry, Sentry, Microsoft, and Google
-traffic was intentionally excluded.
+mobile app. The available tools were derived only from the native app API calls.
 
 ### Authentication
 
